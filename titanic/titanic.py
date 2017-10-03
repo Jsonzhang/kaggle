@@ -8,7 +8,13 @@ train_df = pd.read_csv('./data/train.csv', index_col=False).head(600)
 test_df = pd.read_csv('./data/train.csv', index_col=False).tail(291)
 
 def getTargetFeatures(data):
-  source = data.loc[:, ['Pclass', 'Age', 'SibSp', 'Parch', 'Fare']]
+  source = data.loc[:, ['Pclass', 'Age', 'SibSp', 'Parch', 'Fare', 'Embarked']]
+  km = {
+    'S': 1,
+    'C': 2,
+    'Q': 3
+  }
+  source['Embarked'] = source['Embarked'].map(lambda x : km[x] if (x in km) else 0 )
   source['Age'] = source['Age'].fillna(0)
   source['Fare'] = source['Fare'].fillna(0)
   return source
