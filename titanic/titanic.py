@@ -4,11 +4,11 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestRegressor
+from sklearn import preprocessing
 
 train_df = pd.read_csv('./data/train.csv', index_col=False).head(600)
 test_df = pd.read_csv('./data/train.csv', index_col=False).tail(291)
 valid_df = pd.concat([train_df.tail(100), test_df.head(100)], axis=0)
-
 target_df = pd.read_csv('./data/test.csv', index_col=False)
 
 
@@ -32,8 +32,15 @@ def processFeatures(data):
 
     source['Sex'] = source['Sex'].map(lambda x: 1 if x == 'male' else 0)
 
+    source['isAlone'] = 0
+    source['FamilySize'] = source['SibSp'] + source['Parch'] + 1
+    source.loc[source['FamilySize'] == 1, 'IsAlone'] = 1
+
     source = set_missing_ages(source, ['Age', 'Fare', 'Parch', 'SibSp', 'Pclass'], 'Age')
-    return source.filter(regex='Title|Age|SibSp|Parch|Fare|Embarked_.*|Sex|Pclass_.*')
+
+    source = source.filter(regex='isAlone|Title|Age|SibSp|Parch|Fare|Embarked_.*|Sex|Pclass_.*')
+
+    return preprocessing.MinMaxScaler().fit_transform(source)
 
 
 def set_missing_ages(df, features, target):
