@@ -2,12 +2,14 @@
 
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LogisticRegression, Perceptron
+from sklearn.linear_model import LogisticRegression, Perceptron, SGDClassifier
 from sklearn.ensemble import RandomForestRegressor
 from sklearn import preprocessing
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 
 train_df = pd.read_csv('./data/train.csv', index_col=False).head(600)
 test_df = pd.read_csv('./data/train.csv', index_col=False).tail(291)
@@ -77,13 +79,15 @@ targetX = processFeatures(target_df)
 # reg = KNeighborsClassifier(n_neighbors = 3)
 # reg = GaussianNB()
 # reg = Perceptron()
-reg = svm.LinearSVC()
+# reg = svm.LinearSVC()
+# reg = SGDClassifier()
+# reg = DecisionTreeClassifier()
+reg = RandomForestClassifier(n_estimators=100)
 reg.fit(X, y)
 
 print("trainingSet:", round(reg.score(X, y) * 100, 2))
 print("validset:",round(reg.score(validX, validY) * 100, 2))
 print("testSet:", round(reg.score(testX, testY) * 100, 2))
-
 
 result = reg.predict(targetX)
 
@@ -143,5 +147,20 @@ LinearSVC:
 trainingSet: 81.17
 validset: 78.0
 testSet: 79.73
+
+SGDClassifier:
+trainingSet: 79.33
+validset: 76.5
+testSet: 79.73
+
+DecisionTreeClassifier:
+trainingSet: 98.5
+validset: 83.5
+testSet: 73.2
+
+RandomForestClassifier:
+trainingSet: 98.5
+validset: 84.5
+testSet: 80.76
 
 """
