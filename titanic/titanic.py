@@ -2,11 +2,12 @@
 
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, Perceptron
 from sklearn.ensemble import RandomForestRegressor
 from sklearn import preprocessing
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
 
 train_df = pd.read_csv('./data/train.csv', index_col=False).head(600)
 test_df = pd.read_csv('./data/train.csv', index_col=False).tail(291)
@@ -73,10 +74,11 @@ targetX = processFeatures(target_df)
 
 # reg = svm.SVC()
 # reg = LogisticRegression()
-reg = KNeighborsClassifier(n_neighbors = 3)
-
+# reg = KNeighborsClassifier(n_neighbors = 3)
+# reg = GaussianNB()
+# reg = Perceptron()
+reg = svm.LinearSVC()
 reg.fit(X, y)
-
 
 print("trainingSet:", round(reg.score(X, y) * 100, 2))
 print("validset:",round(reg.score(validX, validY) * 100, 2))
@@ -121,5 +123,25 @@ l1:
 trainingSet: 81.5
 validset: 78.0
 testSet: 79.04
+
+knn:
+trainingSet: 86.67
+validset: 77.5
+testSet: 78.01
+
+gussian:
+trainingSet: 78.5
+validset: 77.5
+testSet: 79.38
+
+Perceptron:
+trainingSet: 74.33
+validset: 69.0
+testSet: 74.91
+
+LinearSVC:
+trainingSet: 81.17
+validset: 78.0
+testSet: 79.73
 
 """
