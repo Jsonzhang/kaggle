@@ -5,6 +5,8 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn import preprocessing
+from sklearn import svm
+from sklearn.neighbors import KNeighborsClassifier
 
 train_df = pd.read_csv('./data/train.csv', index_col=False).head(600)
 test_df = pd.read_csv('./data/train.csv', index_col=False).tail(291)
@@ -66,15 +68,20 @@ testY = test_df['Survived']
 validX = processFeatures(valid_df)
 validY = valid_df['Survived']
 
-target_df.Fare = target_df.Fare.fillna(0)
+target_df.Fare = target_df.Fare.fillna(target_df['Fare'].dropna().median())
 targetX = processFeatures(target_df)
 
-reg = LogisticRegression(penalty='l2')
+# reg = svm.SVC()
+# reg = LogisticRegression()
+reg = KNeighborsClassifier(n_neighbors = 3)
+
 reg.fit(X, y)
 
-print("trainingSet:", np.count_nonzero(reg.predict(X) == y) / float(len(y)))
-print("validset:", np.count_nonzero(reg.predict(validX) == validY) / float(len(validY)))
-print("testSet:", np.count_nonzero(reg.predict(testX) == testY) / float(len(testY)))
+
+print("trainingSet:", round(reg.score(X, y) * 100, 2))
+print("validset:",round(reg.score(validX, validY) * 100, 2))
+print("testSet:", round(reg.score(testX, testY) * 100, 2))
+
 
 result = reg.predict(targetX)
 
@@ -82,6 +89,7 @@ submission = pd.DataFrame({
     "PassengerId": target_df["PassengerId"],
     "Survived": result
 })
+
 submission.to_csv('./submission.csv', index=False)
 
 """
@@ -98,5 +106,20 @@ trainingSet: 0.793333333
 validset: 0.775
 testSet: 0.807560137
 final: 0.76076
+
+svm :
+trainingSet: 79.17
+validset: 75.0
+testSet: 77.66
+
+l2:
+trainingSet: 80.67
+validset: 78.0
+testSet: 79.38
+
+l1:
+trainingSet: 81.5
+validset: 78.0
+testSet: 79.04
 
 """
