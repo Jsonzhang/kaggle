@@ -17,47 +17,45 @@ def processFeatures(data):
   source = data
 
   dummies_embarked = pd.get_dummies(source['Embarked'], prefix= 'Embarked')
-  dummies_embarked = pd.get_dummies(source['Sex'], prefix= 'Embarked')
-  source = pd.concat([source, dummies_embarked], axis=1)
+  dummies_sex = pd.get_dummies(source['Sex'], prefix= 'Sex')
+  dummies_Pclass = pd.get_dummies(source['Pclass'], prefix= 'Pclass')
+  source = pd.concat([source, dummies_embarked, dummies_sex, dummies_Pclass], axis=1)
 
   source['Sex'] = source['Sex'].map(lambda x : 1 if x == 'male' else 0 )
 
-  source = set_missing_ages(source)
-  return source.filter(regex='Age|SibSp|Parch|Fare|Embarked_.*|Sex|Pclass')
+  source = set_missing_ages(source, ['Age', 'Fare', 'Parch', 'SibSp', 'Pclass'], 'Age')
+  return source.filter(regex='Age|SibSp|Parch|Fare|Embarked_.*|Sex|Pclass_.*')
 
-def set_missing_ages(df):
-  # 把已有的数值型特征取出来丢进Random Forest Regressor中
-  age_df = df[['Age','Fare', 'Parch', 'SibSp', 'Pclass']]
-  # 乘客分成已知年龄和未知年龄两部分
-  known_age = age_df[age_df.Age.notnull()].as_matrix()
-  unknown_age = age_df[age_df.Age.isnull()].as_matrix()
-  y = known_age[:, 0]
-  X = known_age[:, 1:]
-  rfr = RandomForestRegressor(random_state=0, n_estimators=2000, n_jobs=-1)
-  rfr.fit(X, y)
-  predictedAges = rfr.predict(unknown_age[:, 1::])
-  df.loc[ (df.Age.isnull()), 'Age' ] = predictedAges 
+def set_missing_ages(df, features, target):
+  target_df = df[features]
+  known = target_df[target_df[target].notnull()].as_matrix()
+  unknown = target_df[target_df[target].isnull()].as_matrix()
+  y = known[:, 0]
+  X = known[:, 1:]
+  if len(unknown):
+    rfr = RandomForestRegressor(random_state=0, n_estimators=2000, n_jobs=-1)
+    rfr.fit(X, y)
+    predicted = rfr.predict(unknown[:, 1::])
+    df.loc[ (df[target].isnull()), target ] = predicted
   return df
 
-
-
-X = processFeatures(train_df)
 # Name Ticket Cabin
+X = processFeatures(train_df)
 y = train_df['Survived']
 testX = processFeatures(test_df)
 testY = test_df['Survived']
 validX = processFeatures(valid_df)
 validY = valid_df['Survived']
 
-target_df['Fare'] = target_df.Fare.fillna(0)
+target_df.Fare = target_df.Fare.fillna(0)
 targetX = processFeatures(target_df)
 
-reg = LogisticRegression()
+reg = LogisticRegression(penalty='l2')
 reg.fit(X, y)
 
 print("trainingSet:", np.count_nonzero(reg.predict(X) == y) / float(len(y)))
 print("validset:" , np.count_nonzero(reg.predict(validX) == validY) / float(len(validY)))
-print("testSet", np.count_nonzero(reg.predict(testX) == testY) / float(len(testY)))
+print("testSet:", np.count_nonzero(reg.predict(testX) == testY) / float(len(testY)))
 
 result = reg.predict(targetX)
 
@@ -67,3 +65,19 @@ submission = pd.DataFrame({
 })
 submission.to_csv('./submission.csv', index=False)
 
+"""
+first submit:
+
+trainingSet: 0.8016666666666666
+validset: 0.77
+testSet: 0.7938144329896907
+final: 0.76555
+
+second submit:
+
+trainingSet: 0.793333333
+validset: 0.775
+testSet: 0.807560137
+final: 0.76076
+
+"""
