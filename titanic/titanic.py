@@ -13,31 +13,43 @@ target_df = pd.read_csv('./data/test.csv', index_col=False)
 
 
 def processFeatures(data):
-  # source = data.loc[:, ['Pclass', 'SibSp', 'Parch', 'Fare']]
-  source = data
+    # source = data.loc[:, ['Pclass', 'SibSp', 'Parch', 'Fare']]
+    source = data
 
-  dummies_embarked = pd.get_dummies(source['Embarked'], prefix= 'Embarked')
-  dummies_sex = pd.get_dummies(source['Sex'], prefix= 'Sex')
-  dummies_Pclass = pd.get_dummies(source['Pclass'], prefix= 'Pclass')
-  source = pd.concat([source, dummies_embarked, dummies_sex, dummies_Pclass], axis=1)
+    dummies_embarked = pd.get_dummies(source['Embarked'], prefix='Embarked')
+    dummies_sex = pd.get_dummies(source['Sex'], prefix='Sex')
+    dummies_Pclass = pd.get_dummies(source['Pclass'], prefix='Pclass')
+    source = pd.concat([source, dummies_embarked, dummies_sex, dummies_Pclass], axis=1)
 
-  source['Sex'] = source['Sex'].map(lambda x : 1 if x == 'male' else 0 )
+    source['Title'] = source.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
+    source['Title'] = source['Title'].replace(['Lady', 'Countess','Capt', 'Col', 'Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer', 'Dona'], 'Rare')
+    source['Title'] = source['Title'].replace('Mlle', 'Miss')
+    source['Title'] = source['Title'].replace('Ms', 'Miss')
+    source['Title'] = source['Title'].replace('Mme', 'Mrs')
+    title_mapping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Rare": 5}
+    source['Title'] = source['Title'].map(title_mapping)
+    source['Title'] = source['Title'].fillna(0)
 
-  source = set_missing_ages(source, ['Age', 'Fare', 'Parch', 'SibSp', 'Pclass'], 'Age')
-  return source.filter(regex='Age|SibSp|Parch|Fare|Embarked_.*|Sex|Pclass_.*')
+    source['Sex'] = source['Sex'].map(lambda x: 1 if x == 'male' else 0)
+
+    source = set_missing_ages(source, ['Age', 'Fare', 'Parch', 'SibSp', 'Pclass'], 'Age')
+    return source.filter(regex='Title|Age|SibSp|Parch|Fare|Embarked_.*|Sex|Pclass_.*')
+
 
 def set_missing_ages(df, features, target):
-  target_df = df[features]
-  known = target_df[target_df[target].notnull()].as_matrix()
-  unknown = target_df[target_df[target].isnull()].as_matrix()
-  y = known[:, 0]
-  X = known[:, 1:]
-  if len(unknown):
-    rfr = RandomForestRegressor(random_state=0, n_estimators=2000, n_jobs=-1)
-    rfr.fit(X, y)
-    predicted = rfr.predict(unknown[:, 1::])
-    df.loc[ (df[target].isnull()), target ] = predicted
-  return df
+    target_df = df[features]
+    known = target_df[target_df[target].notnull()].as_matrix()
+    unknown = target_df[target_df[target].isnull()].as_matrix()
+    y = known[:, 0]
+    X = known[:, 1:]
+    if len(unknown):
+        rfr = RandomForestRegressor(
+            random_state=0, n_estimators=2000, n_jobs=-1)
+        rfr.fit(X, y)
+        predicted = rfr.predict(unknown[:, 1::])
+        df.loc[(df[target].isnull()), target] = predicted
+    return df
+
 
 # Name Ticket Cabin
 X = processFeatures(train_df)
@@ -54,7 +66,7 @@ reg = LogisticRegression(penalty='l2')
 reg.fit(X, y)
 
 print("trainingSet:", np.count_nonzero(reg.predict(X) == y) / float(len(y)))
-print("validset:" , np.count_nonzero(reg.predict(validX) == validY) / float(len(validY)))
+print("validset:", np.count_nonzero(reg.predict(validX) == validY) / float(len(validY)))
 print("testSet:", np.count_nonzero(reg.predict(testX) == testY) / float(len(testY)))
 
 result = reg.predict(targetX)
