@@ -10,6 +10,7 @@ test_df = pd.read_csv('./data/train.csv', index_col=False).tail(291)
 def getTargetFeatures(data):
   source = data.loc[:, ['Pclass', 'Age', 'SibSp', 'Parch', 'Fare']]
   dummies_embarked = pd.get_dummies(data['Embarked'], prefix= 'Embarked')
+  source['Sex'] = data['Sex'].map(lambda x : 1 if x == 'male' else 0 )
   source['Age'] = source['Age'].fillna(0)
   source['Fare'] = source['Fare'].fillna(0)
   return pd.concat([source, dummies_embarked], axis=1)
