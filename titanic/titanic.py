@@ -10,20 +10,20 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
-
+from sklearn.model_selection import GridSearchCV
 
 
 def processFeatures(data):
-    # source = data.loc[:, ['Pclass', 'SibSp', 'Parch', 'Fare']]
     source = data
+    source.Cabin = source.Cabin.str.extract('([A-Z])\d+', expand=False)
+    source.Cabin.fillna('NULL', inplace=True)
 
     source.Fare.fillna(source['Fare'].dropna().median(), inplace=True)
     dummies_embarked = pd.get_dummies(source['Embarked'], prefix='Embarked')
-    # dummies_sex = pd.get_dummies(source['Sex'], prefix='Sex')
+    dummies_cabin = pd.get_dummies(source['Cabin'], prefix='Cabin')
     dummies_Pclass = pd.get_dummies(source['Pclass'], prefix='Pclass')
-    source = pd.concat([source, dummies_embarked, dummies_Pclass], axis=1)
+    source = pd.concat([source, dummies_embarked, dummies_Pclass, dummies_cabin], axis=1)
 
-    # source['Title'] = handle_title(source)
     source['Title'] = source.Name.str.extract(' ([A-Za-z]+)\.', expand=False).map(survived_rate, na_action=None)
     source['Title'].fillna(0.5, inplace=True)
     
@@ -31,35 +31,15 @@ def processFeatures(data):
     source['isChild'] = source['Age'].map(lambda x: 1 if x <= 16 else 0)
     source['isAlone'] = 0
     source['FamilySize'] = source['SibSp'] + source['Parch'] + 1
+
+    source['SibSp'] = source['SibSp'].map(sib_rate, na_action=None)
+    source['SibSp'].fillna(0.5, inplace=True)
+
     source.loc[source['FamilySize'] == 1, 'isAlone'] = 1
     source = set_missing_ages(source, ['Age', 'Fare', 'Parch', 'SibSp', 'Pclass'], 'Age')
-    source = source.filter(regex='isChild|isAlone|Title|Age|SibSp|Parch|Fare|Embarked_.*|Sex|Pclass_.*')
+    source = source.filter(regex='isChild|isAlone|Title|Age|SibSp|Parch|Fare|Embarked_.*|Cabin_.*|Sex|Pclass_.*')
 
     return preprocessing.MinMaxScaler().fit_transform(source)
-
-def handler_name():
-    # 分析各种特征姓名的人的死亡率，然后按比例变成数字
-    replacement = {
-        'Don': 0,
-        'Rev': 0,
-        'Jonkheer': 0,
-        'Capt': 0,
-        'Mr': 1,
-        'Dr': 2,
-        'Col': 3,
-        'Major': 3,
-        'Master': 4,
-        'Miss': 5,
-        'Mrs': 6,
-        'Mme': 7,
-        'Ms': 7,
-        'Mlle': 7,
-        'Sir': 7,
-        'Lady': 7,
-        'the Countess': 7
-    }
-    # 记得用 StandardScaler 的 fit_transform 来打散一下 
-    return replacement
 
 def set_missing_ages(df, features, target):
     # 根据所坐舱位等数字讯息推断年龄
@@ -92,29 +72,29 @@ def set_missing_ages_2(df, feature):
     return df
 # Name Ticket Cabin
 
-def handle_title(source):
-    titles = source.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
-    titles = titles.replace(['Lady', 'Countess', 'Capt', 'Col', 'Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer', 'Dona'], 'Rare')
-    titles = titles.replace('Mlle', 'Miss')
-    titles = titles.replace('Ms', 'Miss')
-    titles = titles.replace('Mme', 'Mrs')
-    title_mapping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Rare": 5}
-    titles = titles.map(title_mapping)
-    titles = titles.fillna(0, inplace=True)
-    return titles
-
 def title_keymap_generate(target):
     titles = target.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
     km = titles.unique()
     survived_rate = pd.Series(0.0, index=km)
     for title in km:
-        title_df = target.Survived[titles == title]
         survived_total = target.Survived[titles == title].value_counts()
         if 1 in survived_total:
             survived_rate[title] = float(survived_total[1]) / float(sum(survived_total))
         else:
             survived_rate[title] = 0
     return survived_rate
+
+def sibsp_map_generate(source):
+    km = source['SibSp'].unique()
+    sib_rate = pd.Series(0.0, index=km)
+    for sib in km:
+        survived_total = source.Survived[source['SibSp'] == sib].value_counts()
+        if 1 in survived_total:
+            sib_rate[sib] = float(survived_total[1]) / float(sum(survived_total))
+        else:
+            sib_rate[sib] = 0
+    return sib_rate
+
 
 
 train_df = pd.read_csv('./data/train.csv', index_col=False).head(540)
@@ -124,6 +104,7 @@ test_df = pd.read_csv('./data/train.csv', index_col=False).tail(191)
 target_df = pd.read_csv('./data/test.csv', index_col=False)
 
 survived_rate = title_keymap_generate(train_df)
+sib_rate = sibsp_map_generate(train_df)
 
 X = processFeatures(train_df)
 y = train_df['Survived']
@@ -142,14 +123,26 @@ targetX = processFeatures(target_df)
 # reg = svm.LinearSVC()
 # reg = SGDClassifier()
 # reg = DecisionTreeClassifier()
-reg = RandomForestClassifier(n_estimators=200,max_features=10,min_samples_leaf=10, max_depth=5)
-reg.fit(X, y)
 
-print("trainingSet:", round(reg.score(X, y) * 100, 2))
-print("validset:",round(reg.score(validX, validY) * 100, 2))
-print("testSet:", round(reg.score(testX, testY) * 100, 2))
+# create param grid object
+forrest_params = dict(
+    max_depth = [n for n in range(9, 14)],
+    min_samples_split = [n for n in range(4, 11)],
+    min_samples_leaf = [n for n in range(2, 5)],
+    n_estimators = [n for n in range(10, 60, 10)],
+)
 
-result = reg.predict(targetX)
+forrest = RandomForestClassifier()
+forest_cv = GridSearchCV(estimator=forrest, param_grid=forrest_params, cv=5)
+forest_cv.fit(X, y)
+
+print("Best score: {}".format(forest_cv.best_score_))
+print("Best params: {}".format(forest_cv.best_estimator_))
+print("trainingSet:", round(forest_cv.score(X, y) * 100, 2))
+print("validset:",round(forest_cv.score(validX, validY) * 100, 2))
+print("testSet:", round(forest_cv.score(testX, testY) * 100, 2))
+
+result = forest_cv.predict(targetX)
 
 submission = pd.DataFrame({
     "PassengerId": target_df["PassengerId"],
