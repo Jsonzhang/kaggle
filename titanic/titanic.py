@@ -11,44 +11,58 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 
-train_df = pd.read_csv('./data/train.csv', index_col=False).head(600)
-test_df = pd.read_csv('./data/train.csv', index_col=False).tail(291)
-valid_df = pd.concat([train_df.tail(100), test_df.head(100)], axis=0)
-target_df = pd.read_csv('./data/test.csv', index_col=False)
 
 
 def processFeatures(data):
     # source = data.loc[:, ['Pclass', 'SibSp', 'Parch', 'Fare']]
     source = data
 
+    source.Fare.fillna(source['Fare'].dropna().median(), inplace=True)
     dummies_embarked = pd.get_dummies(source['Embarked'], prefix='Embarked')
-    dummies_sex = pd.get_dummies(source['Sex'], prefix='Sex')
+    # dummies_sex = pd.get_dummies(source['Sex'], prefix='Sex')
     dummies_Pclass = pd.get_dummies(source['Pclass'], prefix='Pclass')
-    source = pd.concat([source, dummies_embarked, dummies_sex, dummies_Pclass], axis=1)
+    source = pd.concat([source, dummies_embarked, dummies_Pclass], axis=1)
 
-    source['Title'] = source.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
-    source['Title'] = source['Title'].replace(['Lady', 'Countess','Capt', 'Col', 'Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer', 'Dona'], 'Rare')
-    source['Title'] = source['Title'].replace('Mlle', 'Miss')
-    source['Title'] = source['Title'].replace('Ms', 'Miss')
-    source['Title'] = source['Title'].replace('Mme', 'Mrs')
-    title_mapping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Rare": 5}
-    source['Title'] = source['Title'].map(title_mapping)
-    source['Title'] = source['Title'].fillna(0)
-
+    # source['Title'] = handle_title(source)
+    source['Title'] = source.Name.str.extract(' ([A-Za-z]+)\.', expand=False).map(survived_rate, na_action=None)
+    source['Title'].fillna(0.5, inplace=True)
+    
     source['Sex'] = source['Sex'].map(lambda x: 1 if x == 'male' else 0)
-
+    source['isChild'] = source['Age'].map(lambda x: 1 if x <= 16 else 0)
     source['isAlone'] = 0
     source['FamilySize'] = source['SibSp'] + source['Parch'] + 1
-    source.loc[source['FamilySize'] == 1, 'IsAlone'] = 1
-
+    source.loc[source['FamilySize'] == 1, 'isAlone'] = 1
     source = set_missing_ages(source, ['Age', 'Fare', 'Parch', 'SibSp', 'Pclass'], 'Age')
-
-    source = source.filter(regex='isAlone|Title|Age|SibSp|Parch|Fare|Embarked_.*|Sex|Pclass_.*')
+    source = source.filter(regex='isChild|isAlone|Title|Age|SibSp|Parch|Fare|Embarked_.*|Sex|Pclass_.*')
 
     return preprocessing.MinMaxScaler().fit_transform(source)
 
+def handler_name():
+    # 分析各种特征姓名的人的死亡率，然后按比例变成数字
+    replacement = {
+        'Don': 0,
+        'Rev': 0,
+        'Jonkheer': 0,
+        'Capt': 0,
+        'Mr': 1,
+        'Dr': 2,
+        'Col': 3,
+        'Major': 3,
+        'Master': 4,
+        'Miss': 5,
+        'Mrs': 6,
+        'Mme': 7,
+        'Ms': 7,
+        'Mlle': 7,
+        'Sir': 7,
+        'Lady': 7,
+        'the Countess': 7
+    }
+    # 记得用 StandardScaler 的 fit_transform 来打散一下 
+    return replacement
 
 def set_missing_ages(df, features, target):
+    # 根据所坐舱位等数字讯息推断年龄
     target_df = df[features]
     known = target_df[target_df[target].notnull()].as_matrix()
     unknown = target_df[target_df[target].isnull()].as_matrix()
@@ -62,8 +76,55 @@ def set_missing_ages(df, features, target):
         df.loc[(df[target].isnull()), target] = predicted
     return df
 
+def set_missing_ages_2(df, feature):
+    # 根据姓名求年龄中位数
+    df['Age'].fillna(-1, inplace=True)
+    titles = df['Name'].unique()
+    medians = dict()
+    for title in titles:
+        median = df.Age[(df["Age"] != -1) & (df['Name'] == title)].median()
+        medians[title] = median
+        
+    for index, row in df.iterrows():
+        if row['Age'] == -1:
+            df.loc[index, 'Age'] = medians[row['Name']]
 
+    return df
 # Name Ticket Cabin
+
+def handle_title(source):
+    titles = source.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
+    titles = titles.replace(['Lady', 'Countess', 'Capt', 'Col', 'Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer', 'Dona'], 'Rare')
+    titles = titles.replace('Mlle', 'Miss')
+    titles = titles.replace('Ms', 'Miss')
+    titles = titles.replace('Mme', 'Mrs')
+    title_mapping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Rare": 5}
+    titles = titles.map(title_mapping)
+    titles = titles.fillna(0, inplace=True)
+    return titles
+
+def title_keymap_generate(target):
+    titles = target.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
+    km = titles.unique()
+    survived_rate = pd.Series(0.0, index=km)
+    for title in km:
+        title_df = target.Survived[titles == title]
+        survived_total = target.Survived[titles == title].value_counts()
+        if 1 in survived_total:
+            survived_rate[title] = float(survived_total[1]) / float(sum(survived_total))
+        else:
+            survived_rate[title] = 0
+    return survived_rate
+
+
+train_df = pd.read_csv('./data/train.csv', index_col=False).head(540)
+valid_df = pd.read_csv('./data/train.csv', index_col=False)[540:700]
+test_df = pd.read_csv('./data/train.csv', index_col=False).tail(191)
+# valid_df = pd.concat([train_df.tail(100), test_df.head(100)], axis=0)
+target_df = pd.read_csv('./data/test.csv', index_col=False)
+
+survived_rate = title_keymap_generate(train_df)
+
 X = processFeatures(train_df)
 y = train_df['Survived']
 testX = processFeatures(test_df)
@@ -71,7 +132,6 @@ testY = test_df['Survived']
 validX = processFeatures(valid_df)
 validY = valid_df['Survived']
 
-target_df.Fare = target_df.Fare.fillna(target_df['Fare'].dropna().median())
 targetX = processFeatures(target_df)
 
 # reg = svm.SVC()
@@ -82,7 +142,7 @@ targetX = processFeatures(target_df)
 # reg = svm.LinearSVC()
 # reg = SGDClassifier()
 # reg = DecisionTreeClassifier()
-reg = RandomForestClassifier(n_estimators=100)
+reg = RandomForestClassifier(n_estimators=200,max_features=10,min_samples_leaf=10, max_depth=5)
 reg.fit(X, y)
 
 print("trainingSet:", round(reg.score(X, y) * 100, 2))
@@ -162,5 +222,19 @@ RandomForestClassifier:
 trainingSet: 98.5
 validset: 84.5
 testSet: 80.76
+
+RandomForestClassifier with params:
+trainingSet: 85.19
+validset: 77.5
+testSet: 84.82
+
+kaggal: 3641 - 0.78468
+
+----------------------------------
+refer: https://medium.com/towards-data-science/how-i-got-98-prediction-accuracy-with-kaggles-titanic-competition-ad24afed01fc
+
+
+
+
 
 """
