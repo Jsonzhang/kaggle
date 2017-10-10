@@ -29,6 +29,7 @@ def processFeatures(data):
     
     source['Sex'] = source['Sex'].map(lambda x: 1 if x == 'male' else 0)
     source['isChild'] = source['Age'].map(lambda x: 1 if x <= 16 else 0)
+    source['isOld'] = source['Age'].map(lambda x: 1 if x > 60 else 0)
     source['isAlone'] = 0
     source['FamilySize'] = source['SibSp'] + source['Parch'] + 1
 
@@ -37,7 +38,7 @@ def processFeatures(data):
 
     source.loc[source['FamilySize'] == 1, 'isAlone'] = 1
     source = set_missing_ages(source, ['Age', 'Fare', 'Parch', 'SibSp', 'Pclass'], 'Age')
-    source = source.filter(regex='isChild|isAlone|Title|Age|SibSp|Parch|Fare|Embarked_.*|Cabin_.*|Sex|Pclass_.*')
+    source = source.filter(regex='isOld|isChild|isAlone|Title|Age|Fare|Embarked_.*|Cabin_.*|Sex|Pclass_.*')
 
     return preprocessing.MinMaxScaler().fit_transform(source)
 
@@ -97,8 +98,8 @@ def sibsp_map_generate(source):
 
 
 
-train_df = pd.read_csv('./data/train.csv', index_col=False).head(540)
-valid_df = pd.read_csv('./data/train.csv', index_col=False)[540:700]
+train_df = pd.read_csv('./data/train.csv', index_col=False).head(700)
+# valid_df = pd.read_csv('./data/train.csv', index_col=False)[540:700]
 test_df = pd.read_csv('./data/train.csv', index_col=False).tail(191)
 # valid_df = pd.concat([train_df.tail(100), test_df.head(100)], axis=0)
 target_df = pd.read_csv('./data/test.csv', index_col=False)
@@ -110,8 +111,8 @@ X = processFeatures(train_df)
 y = train_df['Survived']
 testX = processFeatures(test_df)
 testY = test_df['Survived']
-validX = processFeatures(valid_df)
-validY = valid_df['Survived']
+# validX = processFeatures(valid_df)
+# validY = valid_df['Survived']
 
 targetX = processFeatures(target_df)
 
@@ -139,7 +140,7 @@ forest_cv.fit(X, y)
 print("Best score: {}".format(forest_cv.best_score_))
 print("Best params: {}".format(forest_cv.best_estimator_))
 print("trainingSet:", round(forest_cv.score(X, y) * 100, 2))
-print("validset:",round(forest_cv.score(validX, validY) * 100, 2))
+# print("validset:",round(forest_cv.score(validX, validY) * 100, 2))
 print("testSet:", round(forest_cv.score(testX, testY) * 100, 2))
 
 result = forest_cv.predict(targetX)
@@ -222,6 +223,11 @@ validset: 77.5
 testSet: 84.82
 
 kaggal: 3641 - 0.78468
+
+trainingSet: 89.86
+testSet: 86.39
+kaggal: 0.7799
+
 
 ----------------------------------
 refer: https://medium.com/towards-data-science/how-i-got-98-prediction-accuracy-with-kaggles-titanic-competition-ad24afed01fc
