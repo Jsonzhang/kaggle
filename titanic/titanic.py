@@ -1,17 +1,23 @@
 # coding=utf-8
 
+import matplotlib.pyplot as plt
+
 import pandas as pd
 import numpy as np
+import seaborn as sns
+
+from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.linear_model import LogisticRegression, Perceptron, SGDClassifier
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, GradientBoostingClassifier, RandomForestRegressor
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn import preprocessing
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 
+from sklearn.metrics import accuracy_score, log_loss
 
 def processFeatures(data):
     source = data
@@ -19,14 +25,29 @@ def processFeatures(data):
     source.Cabin.fillna('NULL', inplace=True)
 
     source.Fare.fillna(source['Fare'].dropna().median(), inplace=True)
-    dummies_embarked = pd.get_dummies(source['Embarked'], prefix='Embarked')
-    dummies_cabin = pd.get_dummies(source['Cabin'], prefix='Cabin')
-    dummies_Pclass = pd.get_dummies(source['Pclass'], prefix='Pclass')
-    source = pd.concat([source, dummies_embarked, dummies_Pclass, dummies_cabin], axis=1)
+    dummiesEmbarked = pd.get_dummies(source['Embarked'], prefix='Embarked')
+    dummiesCabin = pd.get_dummies(source['Cabin'], prefix='Cabin')
+    dummiesPclass = pd.get_dummies(source['Pclass'], prefix='Pclass')
 
-    source['Title'] = source.Name.str.extract(' ([A-Za-z]+)\.', expand=False).map(survived_rate, na_action=None)
-    source['Title'].fillna(0.5, inplace=True)
-    
+    source['Title'] = source.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
+    source['Title'] = source['Title'].replace(['Lady', 'Countess','Capt', 'Col', 'Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer', 'Dona'], 'Rare')
+    source['Title'] = source['Title'].replace('Mlle', 'Miss')
+    source['Title'] = source['Title'].replace('Ms', 'Miss')
+    source['Title'] = source['Title'].replace('Mme', 'Mrs')
+    title_mapping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Rare": 5}
+    source['Title'] = source['Title'].map(title_mapping)
+
+    dummiesTitle = pd.get_dummies(source['Title'], prefix='Title')
+
+    source.loc[source['Fare'] <= 7.91, 'Fare'] = 0
+    source.loc[(source['Fare'] > 7.91), 'Fare'] = 1
+    source.loc[(source['Fare'] > 14.454) & (source['Fare'] <= 31), 'Fare'] = 2
+    source.loc[source['Fare'] > 31, 'Fare']= 3
+
+    dummiesFare = pd.get_dummies(source['Fare'], prefix='Fare')
+
+    source = pd.concat([source, dummiesEmbarked, dummiesPclass, dummiesCabin, dummiesTitle, dummiesFare], axis=1)
+
     source['Sex'] = source['Sex'].map(lambda x: 1 if x == 'male' else 0)
     source['isChild'] = source['Age'].map(lambda x: 1 if x <= 16 else 0)
     source['isOld'] = source['Age'].map(lambda x: 1 if x > 60 else 0)
@@ -38,7 +59,7 @@ def processFeatures(data):
 
     source.loc[source['FamilySize'] == 1, 'isAlone'] = 1
     source = set_missing_ages(source, ['Age', 'Fare', 'Parch', 'SibSp', 'Pclass'], 'Age')
-    source = source.filter(regex='isOld|isChild|isAlone|Title|Age|Fare|Embarked_.*|Cabin_.*|Sex|Pclass_.*')
+    source = source.filter(regex='SibSp|isOld|isChild|isAlone|Title_.*|Age|Fare_.*|Embarked_.*|Cabin_.*|Sex|Pclass_.*')
 
     return preprocessing.MinMaxScaler().fit_transform(source)
 
@@ -57,34 +78,6 @@ def set_missing_ages(df, features, target):
         df.loc[(df[target].isnull()), target] = predicted
     return df
 
-def set_missing_ages_2(df, feature):
-    # 根据姓名求年龄中位数
-    df['Age'].fillna(-1, inplace=True)
-    titles = df['Name'].unique()
-    medians = dict()
-    for title in titles:
-        median = df.Age[(df["Age"] != -1) & (df['Name'] == title)].median()
-        medians[title] = median
-        
-    for index, row in df.iterrows():
-        if row['Age'] == -1:
-            df.loc[index, 'Age'] = medians[row['Name']]
-
-    return df
-# Name Ticket Cabin
-
-def title_keymap_generate(target):
-    titles = target.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
-    km = titles.unique()
-    survived_rate = pd.Series(0.0, index=km)
-    for title in km:
-        survived_total = target.Survived[titles == title].value_counts()
-        if 1 in survived_total:
-            survived_rate[title] = float(survived_total[1]) / float(sum(survived_total))
-        else:
-            survived_rate[title] = 0
-    return survived_rate
-
 def sibsp_map_generate(source):
     km = source['SibSp'].unique()
     sib_rate = pd.Series(0.0, index=km)
@@ -96,144 +89,92 @@ def sibsp_map_generate(source):
             sib_rate[sib] = 0
     return sib_rate
 
-
-
-train_df = pd.read_csv('./data/train.csv', index_col=False).head(700)
+train_df = pd.read_csv('./data/train.csv', index_col=False)
 # valid_df = pd.read_csv('./data/train.csv', index_col=False)[540:700]
-test_df = pd.read_csv('./data/train.csv', index_col=False).tail(191)
+# test_df = pd.read_csv('./data/train.csv', index_col=False).tail(191)
 # valid_df = pd.concat([train_df.tail(100), test_df.head(100)], axis=0)
 target_df = pd.read_csv('./data/test.csv', index_col=False)
 
-survived_rate = title_keymap_generate(train_df)
 sib_rate = sibsp_map_generate(train_df)
 
 X = processFeatures(train_df)
 y = train_df['Survived']
-testX = processFeatures(test_df)
-testY = test_df['Survived']
+# testX = processFeatures(test_df)
+# testY = test_df['Survived']
 # validX = processFeatures(valid_df)
 # validY = valid_df['Survived']
 
 targetX = processFeatures(target_df)
-
-# reg = svm.SVC()
-# reg = LogisticRegression()
-# reg = KNeighborsClassifier(n_neighbors = 3)
-# reg = GaussianNB()
-# reg = Perceptron()
-# reg = svm.LinearSVC()
-# reg = SGDClassifier()
-# reg = DecisionTreeClassifier()
 
 # create param grid object
 forrest_params = dict(
     max_depth = [n for n in range(9, 14)],
     min_samples_split = [n for n in range(4, 11)],
     min_samples_leaf = [n for n in range(2, 5)],
-    n_estimators = [n for n in range(10, 60, 10)],
+    n_estimators = [n for n in range(10, 60, 10)]
 )
 
-forrest = RandomForestClassifier()
-forest_cv = GridSearchCV(estimator=forrest, param_grid=forrest_params, cv=5)
-forest_cv.fit(X, y)
+classifiers = [
+    KNeighborsClassifier(3),
+    svm.SVC(probability=True),
+    svm.LinearSVC(),
+    DecisionTreeClassifier(),
+    GridSearchCV(estimator=RandomForestClassifier(), param_grid=forrest_params, cv=5),
+    AdaBoostClassifier(),
+    SGDClassifier(),
+    GradientBoostingClassifier(),
+    GaussianNB(),
+    Perceptron(),
+    LinearDiscriminantAnalysis(),
+    QuadraticDiscriminantAnalysis(),
+    LogisticRegression(),
+    DecisionTreeClassifier()
+]
 
-print("Best score: {}".format(forest_cv.best_score_))
-print("Best params: {}".format(forest_cv.best_estimator_))
-print("trainingSet:", round(forest_cv.score(X, y) * 100, 2))
-# print("validset:",round(forest_cv.score(validX, validY) * 100, 2))
-print("testSet:", round(forest_cv.score(testX, testY) * 100, 2))
+maxValue = 0
+targetClf = None
+acc_dict = {}
 
-result = forest_cv.predict(targetX)
+log_cols = ["Classifier", "Accuracy"]
+log = pd.DataFrame(columns=log_cols)
+sss = StratifiedShuffleSplit(n_splits=10, test_size=0.1, random_state=0)
 
+for train_index, test_index in sss.split(X, y):
+    X_train, X_test = X[train_index], X[test_index]
+    y_train, y_test = y[train_index], y[test_index]
+    for clf in classifiers:
+        name = clf.__class__.__name__
+        clf.fit(X_train, y_train)
+        train_predictions = clf.predict(X_test)
+        acc = accuracy_score(y_test, train_predictions)
+        print(acc)
+        if acc > maxValue:
+            targetClf = clf
+            maxValue = acc
+        if name in acc_dict:
+            acc_dict[name] += acc
+        else:
+            acc_dict[name] = acc
+
+for clf in acc_dict:
+    acc_dict[clf] = acc_dict[clf] / 10.0
+    log_entry = pd.DataFrame([[clf, acc_dict[clf]]], columns=log_cols)
+    log = log.append(log_entry)
+
+plt.xlabel('Accuracy')
+plt.title('Classifier Accuracy')
+
+sns.set_color_codes("muted")
+sns.barplot(x='Accuracy', y='Classifier', data=log, color="b")
+
+result = targetClf.predict(targetX)
 submission = pd.DataFrame({
     "PassengerId": target_df["PassengerId"],
     "Survived": result
 })
-
 submission.to_csv('./submission.csv', index=False)
 
 """
-first submit:
-
-trainingSet: 0.8016666666666666
-validset: 0.77
-testSet: 0.7938144329896907
-final: 0.76555
-
-second submit:
-
-trainingSet: 0.793333333
-validset: 0.775
-testSet: 0.807560137
-final: 0.76076
-
-svm :
-trainingSet: 79.17
-validset: 75.0
-testSet: 77.66
-
-l2:
-trainingSet: 80.67
-validset: 78.0
-testSet: 79.38
-
-l1:
-trainingSet: 81.5
-validset: 78.0
-testSet: 79.04
-
-knn:
-trainingSet: 86.67
-validset: 77.5
-testSet: 78.01
-
-gussian:
-trainingSet: 78.5
-validset: 77.5
-testSet: 79.38
-
-Perceptron:
-trainingSet: 74.33
-validset: 69.0
-testSet: 74.91
-
-LinearSVC:
-trainingSet: 81.17
-validset: 78.0
-testSet: 79.73
-
-SGDClassifier:
-trainingSet: 79.33
-validset: 76.5
-testSet: 79.73
-
-DecisionTreeClassifier:
-trainingSet: 98.5
-validset: 83.5
-testSet: 73.2
-
-RandomForestClassifier:
-trainingSet: 98.5
-validset: 84.5
-testSet: 80.76
-
-RandomForestClassifier with params:
-trainingSet: 85.19
-validset: 77.5
-testSet: 84.82
-
-kaggal: 3641 - 0.78468
-
-trainingSet: 89.86
-testSet: 86.39
-kaggal: 0.7799
-
-
-----------------------------------
-refer: https://medium.com/towards-data-science/how-i-got-98-prediction-accuracy-with-kaggles-titanic-competition-ad24afed01fc
-
-
-
-
-
+kaggal: 0.78468
+kaggal: 3587
 """
