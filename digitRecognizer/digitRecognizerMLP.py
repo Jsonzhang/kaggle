@@ -30,7 +30,7 @@ X_target = X_target.drop(cols_to_drop, axis=1)
 
 # logic = GridSearchCV(estimator=RandomForestClassifier(), param_grid=forrest_params, cv=5)
 # logic = LogisticRegression()
-logic = MLPClassifier(activation='tanh')
+logic = MLPClassifier()
 logic.fit(X_train, y_train)
 
 result = logic.predict(X_target)
